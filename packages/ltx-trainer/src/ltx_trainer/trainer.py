@@ -24,6 +24,7 @@ from torch.optim.lr_scheduler import (
     LRScheduler,
     PolynomialLR,
     StepLR,
+    LambdaLR,
 )
 from torch.utils.data import DataLoader
 from torchvision.transforms import functional as F  # noqa: N812
@@ -83,9 +84,9 @@ class LtxvTrainer:
         if IS_MAIN_PROCESS:
             print_config(trainer_config)
         self._training_strategy = get_training_strategy(self._config.training_strategy)
+        self._setup_accelerator()
         self._cached_validation_embeddings = self._load_text_encoder_and_cache_embeddings()
         self._load_models()
-        self._setup_accelerator()
         self._collect_trainable_params()
         self._loaded_checkpoint_path: Path | None = None
         self._load_checkpoint()
@@ -383,7 +384,7 @@ class LtxvTrainer:
         logger.debug("Loading text encoder...")
         text_encoder = load_text_encoder(
             gemma_model_path=self._config.model.text_encoder_path,
-            device="cuda",
+            device=self._accelerator.device,
             dtype=torch.bfloat16,
             load_in_8bit=self._config.acceleration.load_text_encoder_in_8bit,
         )
@@ -392,7 +393,7 @@ class LtxvTrainer:
         logger.debug("Loading embeddings processor...")
         self._embeddings_processor = load_embeddings_processor(
             checkpoint_path=self._config.model.model_path,
-            device="cuda",
+            device=self._accelerator.device,
             dtype=torch.bfloat16,
         )
 
@@ -772,7 +773,7 @@ class LtxvTrainer:
     def _create_scheduler(self, optimizer: torch.optim.Optimizer) -> LRScheduler | None:
         """Create learning rate scheduler based on config."""
         scheduler_type = self._config.optimization.scheduler_type
-        steps = self._config.optimization.steps
+        steps = self._config.optimization.steps * self._accelerator.num_processes
         params = self._config.optimization.scheduler_params or {}
 
         if scheduler_type is None:
@@ -816,10 +817,16 @@ class LtxvTrainer:
                 **params,
             )
         elif scheduler_type == "constant":
-            scheduler = None
+            warmup_steps = int(steps * params.pop("warmup_ratio", 0.025))
+    
+            def lr_lambda(current_step: int) -> float:
+                if warmup_steps > 0 and current_step < warmup_steps:
+                    return float(current_step + 1) / float(warmup_steps)
+                return 1.0
+    
+            scheduler = LambdaLR(optimizer, lr_lambda=lr_lambda)
         else:
             raise ValueError(f"Unknown scheduler type: {scheduler_type}")
-
         return scheduler
 
     def _setup_accelerator(self) -> None:
