@@ -16,6 +16,7 @@ from pathlib import Path
 import typer
 from decode_latents import LatentsDecoder
 from process_captions import compute_captions_embeddings
+from process_keyframes import KeyframeDataset, compute_keyframe_latents
 from process_videos import compute_latents, compute_scaled_resolution_buckets, parse_resolution_buckets
 from rich.console import Console
 
@@ -50,6 +51,7 @@ def preprocess_dataset(  # noqa: PLR0913
     reference_downscale_factor: int = 1,
     with_audio: bool = False,
     load_text_encoder_in_8bit: bool = False,
+    keyframe_column: str | None = None,
 ) -> None:
     """Run the preprocessing pipeline with the given arguments."""
     # Validate dataset file
@@ -131,6 +133,25 @@ def preprocess_dataset(  # noqa: PLR0913
                 output_dir=str(reference_latents_dir),
                 model_path=model_path,
                 batch_size=batch_size,
+                device=device,
+                vae_tiling=vae_tiling,
+            )
+
+    # Process keyframes if keyframe_column is provided
+    if keyframe_column:
+        logger.info("Processing keyframe images for keyframe-conditioned training...")
+        keyframe_output_dir = output_base / "keyframes"
+
+        with free_gpu_memory_context():
+            dataset = KeyframeDataset(
+                dataset_file=dataset_file,
+                keyframe_column=keyframe_column,
+                latents_dir=str(latents_dir),
+            )
+            compute_keyframe_latents(
+                dataset=dataset,
+                model_path=model_path,
+                output_dir=str(keyframe_output_dir),
                 device=device,
                 vae_tiling=vae_tiling,
             )
@@ -252,6 +273,11 @@ def main(  # noqa: PLR0913
         help="Downscale factor for reference video resolution. When > 1, reference videos are processed at "
         "1/n resolution (e.g., 2 means half resolution). Used for efficient IC-LoRA training.",
     ),
+    keyframe_column: str | None = typer.Option(
+        default=None,
+        help="Column name containing keyframe specifications ('0:path1;60:path2;...'). "
+        "When provided, keyframe latents are computed after video latents.",
+    ),
 ) -> None:
     """Preprocess a video dataset by computing and saving latents and text embeddings.
     The dataset must be a CSV, JSON, or JSONL file with columns for captions and video paths.
@@ -310,6 +336,7 @@ def main(  # noqa: PLR0913
         reference_downscale_factor=reference_downscale_factor,
         with_audio=with_audio,
         load_text_encoder_in_8bit=load_text_encoder_in_8bit,
+        keyframe_column=keyframe_column,
     )
 
 

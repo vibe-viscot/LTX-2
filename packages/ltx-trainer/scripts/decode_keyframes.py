@@ -101,7 +101,7 @@ def decode_keyframes(
 
                     output_file = output_path / f"{kf_file.stem}_frame{frame_idx}.png"
                     Image.fromarray(decoded).save(output_file)
-                    logger.info(f"Decoded {kf_file.name} (frame {frame_idx}) -> {output_file}")
+
 
             except Exception as e:
                 logger.error(f"Failed to decode {kf_file}: {e}")
@@ -113,11 +113,11 @@ def decode_keyframes(
 
 @app.command()
 def main(
-    keyframes_dir: str = typer.Argument(
+    keyframes_dir: str = typer.Option(
         ...,
         help="Directory containing keyframe latent .pt files",
     ),
-    model_path: str = typer.Argument(
+    model_path: str = typer.Option(
         ...,
         help="Path to LTX-2 checkpoint (.safetensors)",
     ),
