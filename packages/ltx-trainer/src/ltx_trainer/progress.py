@@ -179,6 +179,7 @@ class TrainingProgress:
         loss: float,
         lr: float,
         step_time: float,
+        grad_norm: float | None = None,
         advance: bool = True,
     ) -> None:
         """Update the training progress display.
@@ -186,12 +187,16 @@ class TrainingProgress:
             loss: Current training loss
             lr: Current learning rate
             step_time: Time taken for this step in seconds
+            grad_norm: Current gradient norm (before clipping)
             advance: Whether to advance the progress by one step
         """
         if self._progress is None or self._train_task is None:
             return
 
-        info = f"Loss: {loss:.4f} | LR: {lr:.2e} | {step_time:.2f}s/step"
+        info = f"Loss: {loss:.4f} | LR: {lr:.2e}"
+        if grad_norm is not None:
+            info += f" | GradNorm: {grad_norm:.4f}"
+        info += f" | {step_time:.2f}s/step"
         self._progress.update(
             self._train_task,
             advance=1 if advance else 0,

@@ -195,8 +195,9 @@ class LtxvTrainer:
                     loss = self._training_step(batch)
                     self._accelerator.backward(loss)
 
+                    grad_norm = None
                     if self._accelerator.sync_gradients and cfg.optimization.max_grad_norm > 0:
-                        self._accelerator.clip_grad_norm_(
+                        grad_norm = self._accelerator.clip_grad_norm_(
                             self._trainable_params,
                             cfg.optimization.max_grad_norm,
                         )
@@ -250,19 +251,21 @@ class LtxvTrainer:
                         loss=loss.item(),
                         lr=current_lr,
                         step_time=step_time,
+                        grad_norm=grad_norm.item() if grad_norm is not None and hasattr(grad_norm, "item") else grad_norm,
                         advance=is_optimization_step,
                     )
 
                     # Log metrics to W&B (only on main process and optimization steps)
                     if IS_MAIN_PROCESS and is_optimization_step:
-                        self._log_metrics(
-                            {
-                                "train/loss": loss.item(),
-                                "train/learning_rate": current_lr,
-                                "train/step_time": step_time,
-                                "train/global_step": self._global_step,
-                            }
-                        )
+                        metrics = {
+                            "train/loss": loss.item(),
+                            "train/learning_rate": current_lr,
+                            "train/step_time": step_time,
+                            "train/global_step": self._global_step,
+                        }
+                        if grad_norm is not None:
+                            metrics["train/grad_norm"] = grad_norm.item() if hasattr(grad_norm, "item") else grad_norm
+                        self._log_metrics(metrics)
 
                     # Fallback logging when progress bars are disabled
                     if disable_progress_bars and IS_MAIN_PROCESS and self._global_step % 20 == 0:
@@ -273,9 +276,10 @@ class LtxvTrainer:
                             total_time = f"{total_estimated // 3600:.0f}h {(total_estimated % 3600) // 60:.0f}m"
                         else:
                             total_time = "calculating..."
+                        grad_norm_str = f", GradNorm: {grad_norm.item():.4f}" if grad_norm is not None and hasattr(grad_norm, "item") else ""
                         logger.info(
                             f"Step {self._global_step}/{cfg.optimization.steps} - "
-                            f"Loss: {loss.item():.4f}, LR: {current_lr:.2e}, "
+                            f"Loss: {loss.item():.4f}, LR: {current_lr:.2e}{grad_norm_str}, "
                             f"Time/Step: {step_time:.2f}s, Total Time: {total_time}",
                         )
 
