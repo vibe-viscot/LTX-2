@@ -1,0 +1,114 @@
+# =============================================================================
+# LTX-2 Keyframe-Conditioned LoRA Training Configuration
+# =============================================================================
+#
+# This configuration is for training LoRA adapters with keyframe conditioning.
+# The model learns to generate videos conditioned on keyframe images at specific
+# frame positions, matching the inference-time keyframe interpolation behavior.
+#
+# Dataset structure:
+#   preprocessed_data_root/
+#   ├── latents/        # Video latents (from process_dataset.py)
+#   ├── conditions/     # Text embeddings (from process_dataset.py)
+#   └── keyframes/      # Keyframe latents (from process_keyframes.py)
+#
+# =============================================================================
+
+model:
+  model_path: "path/to/ltx-2-model.safetensors"
+  text_encoder_path: "path/to/gemma-text-encoder"
+  training_mode: "lora"
+  load_checkpoint: null
+
+lora:
+  rank: 128
+  alpha: 128
+  dropout: 0.05
+  target_modules:
+    - "attn1.to_k"
+    - "attn1.to_q"
+    - "attn1.to_v"
+    - "attn1.to_out.0"
+    - "attn2.to_k"
+    - "attn2.to_q"
+    - "attn2.to_v"
+    - "attn2.to_out.0"
+    - "ff.net.0.proj"
+    - "ff.net.2"
+
+training_strategy:
+  name: "text_to_video"
+
+  # First frame conditioning probability
+  # Set to 1.0 to always condition on the first frame (I2V mode)
+  first_frame_conditioning_p: 1.0
+
+  # Keyframe conditioning probability
+  # Set to 1.0 to always use keyframe conditioning
+  # Frame indices are read from preprocessed keyframe data
+  keyframe_conditioning_p: 1.0
+
+  # Audio is typically disabled for keyframe training
+  with_audio: false
+
+optimization:
+  learning_rate: 1e-4
+  steps: 3000
+  batch_size: 1
+  gradient_accumulation_steps: 2
+  max_grad_norm: 1.0
+  optimizer_type: "adamw"
+  scheduler_type: "constant"
+  scheduler_params:
+    warmup_ratio: 0.05
+  enable_gradient_checkpointing: true
+
+acceleration:
+  mixed_precision_mode: "bf16"
+  quantization: null
+  load_text_encoder_in_8bit: false
+
+data:
+  preprocessed_data_root: "/path/to/preprocessed/data"
+  num_dataloader_workers: 4
+
+validation:
+  prompts:
+    - "A person slowly raises their hand and waves hello to the camera, then lowers their arm."
+  negative_prompt: "worst quality, inconsistent motion, blurry, jittery, distorted"
+  images: null
+  video_dims: [ 544, 960, 121 ]
+  frame_rate: 24.0
+  seed: 42
+  inference_steps: 40
+  interval: 500
+  videos_per_prompt: 1
+  guidance_scale: 4.0
+  stg_scale: 1.0
+  stg_blocks: [29]
+  stg_mode: "stg_v"
+  generate_audio: false
+  skip_initial_validation: true
+
+checkpoints:
+  interval: 1000
+  keep_last_n: -1
+  precision: "bfloat16"
+
+flow_matching:
+  timestep_sampling_mode: "shifted_logit_normal"
+  timestep_sampling_params: { }
+
+hub:
+  push_to_hub: false
+  hub_model_id: null
+
+wandb:
+  enabled: false
+  project: "ltx2-keyframe-lora"
+  entity: null
+  tags: [ "ltx2", "lora", "keyframe" ]
+  log_validation_videos: true
+
+seed: 42
+output_dir: "outputs/ltx2_keyframe_lora"

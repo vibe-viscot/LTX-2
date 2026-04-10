@@ -100,9 +100,12 @@ class PrecomputedDataset(Dataset):
             dataset = PrecomputedDataset("data/", {"latents": "latent_conditions", "conditions": "text_conditions"})
             # IC-LoRA mode
             dataset = PrecomputedDataset("data/", ["latents", "conditions", "reference_latents"])
+            # Keyframe mode
+            dataset = PrecomputedDataset("data/", ["latents", "conditions", "keyframes"])
         Note:
             Latents are always returned in non-patchified format [C, F, H, W].
             Legacy patchified format [seq_len, C] is automatically converted.
+            Keyframes are loaded as list of dicts with 'latent', 'frame_idx', 'path' keys.
         """
         super().__init__()
 
