@@ -86,7 +86,7 @@ class TextToVideoStrategy(TrainingStrategy):
         """
         Text-to-video training requires latents and text conditions.
         When with_audio is True, also requires audio latents.
-        When keyframe_conditioning_p > 0, also requires keyframes.
+        When keyframe_conditioning_p > 0, also requires keyframes (optional per sample).
         """
         sources = {
             "latents": "latents",
@@ -100,6 +100,13 @@ class TextToVideoStrategy(TrainingStrategy):
             sources["keyframes"] = "keyframes"
 
         return sources
+
+    def get_optional_sources(self) -> set[str]:
+        """Keyframes are optional per sample — samples without keyframe files
+        will be trained as regular image-to-video."""
+        if self.config.keyframe_conditioning_p > 0:
+            return {"keyframes"}
+        return set()
 
     def prepare_training_inputs(  # noqa: PLR0915
         self,
@@ -274,10 +281,15 @@ class TextToVideoStrategy(TrainingStrategy):
         if self.config.keyframe_conditioning_p <= 0 or "keyframes" not in batch:
             return None
 
+        keyframe_data = batch["keyframes"]
+
+        # Optional source: keyframe data may be None for samples without keyframes
+        if keyframe_data is None:
+            return None
+
         if torch.rand(1).item() >= self.config.keyframe_conditioning_p:
             return None
 
-        keyframe_data = batch["keyframes"]
         if "keyframes" not in keyframe_data or len(keyframe_data["keyframes"]) == 0:
             return None
 

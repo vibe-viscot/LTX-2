@@ -1,3 +1,4 @@
+import math
 import os
 import re
 import time
@@ -196,11 +197,14 @@ class LtxvTrainer:
                     self._accelerator.backward(loss)
 
                     grad_norm = None
+                    grad_norm_clipped = False
                     if self._accelerator.sync_gradients and cfg.optimization.max_grad_norm > 0:
                         grad_norm = self._accelerator.clip_grad_norm_(
                             self._trainable_params,
                             cfg.optimization.max_grad_norm,
                         )
+                        gn = grad_norm.item() if hasattr(grad_norm, "item") else grad_norm
+                        grad_norm_clipped = gn > cfg.optimization.max_grad_norm
 
                     self._optimizer.step()
                     self._optimizer.zero_grad()
@@ -252,6 +256,7 @@ class LtxvTrainer:
                         lr=current_lr,
                         step_time=step_time,
                         grad_norm=grad_norm.item() if grad_norm is not None and hasattr(grad_norm, "item") else grad_norm,
+                        grad_norm_clipped=grad_norm_clipped,
                         advance=is_optimization_step,
                     )
 
@@ -730,8 +735,13 @@ class LtxvTrainer:
         if self._dataset is None:
             # Get data sources from the training strategy
             data_sources = self._training_strategy.get_data_sources()
+            optional_sources = self._training_strategy.get_optional_sources()
 
-            self._dataset = PrecomputedDataset(self._config.data.preprocessed_data_root, data_sources=data_sources)
+            self._dataset = PrecomputedDataset(
+                self._config.data.preprocessed_data_root,
+                data_sources=data_sources,
+                optional_sources=optional_sources,
+            )
             logger.debug(f"Loaded dataset with {len(self._dataset):,} samples from sources: {list(data_sources)}")
 
         num_workers = self._config.data.num_dataloader_workers
@@ -821,13 +831,22 @@ class LtxvTrainer:
                 **params,
             )
         elif scheduler_type == "constant":
-            warmup_steps = int(steps * params.pop("warmup_ratio", 0.025))
-    
+            scheduler = None
+        elif scheduler_type == "wsd":
+            warmup_ratio = params.pop("warmup_ratio", 0.025)
+            decay_ratio = params.pop("decay_ratio", 0.0)
+            warmup_steps = int(steps * warmup_ratio)
+            decay_steps = int(steps * decay_ratio)
+            stable_end = steps - decay_steps
+
             def lr_lambda(current_step: int) -> float:
                 if warmup_steps > 0 and current_step < warmup_steps:
                     return float(current_step + 1) / float(warmup_steps)
+                if decay_steps > 0 and current_step >= stable_end:
+                    progress = (current_step - stable_end) / decay_steps
+                    return 0.5 * (1.0 + math.cos(math.pi * progress))
                 return 1.0
-    
+
             scheduler = LambdaLR(optimizer, lr_lambda=lr_lambda)
         else:
             raise ValueError(f"Unknown scheduler type: {scheduler_type}")

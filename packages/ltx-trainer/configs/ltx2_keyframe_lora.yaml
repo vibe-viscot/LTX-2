@@ -56,11 +56,12 @@ optimization:
   steps: 3000
   batch_size: 1
   gradient_accumulation_steps: 2
-  max_grad_norm: 0.5
+  max_grad_norm: 0.3
   optimizer_type: "adamw"
-  scheduler_type: "constant"
+  scheduler_type: "wsd"
   scheduler_params:
     warmup_ratio: 0.05
+    decay_ratio: 0.2
   enable_gradient_checkpointing: true
 
 acceleration:

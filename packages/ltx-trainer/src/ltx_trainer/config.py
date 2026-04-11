@@ -129,6 +129,7 @@ class OptimizationConfig(ConfigBaseModel):
 
     scheduler_type: Literal[
         "constant",
+        "wsd",
         "linear",
         "cosine",
         "cosine_with_restarts",

@@ -92,6 +92,15 @@ class TrainingStrategy(ABC):
             or a dictionary mapping data directory names to custom output keys for the dataset
         """
 
+    def get_optional_sources(self) -> set[str]:
+        """Get data source names that are optional per sample.
+        Optional sources may not have files for every sample. Samples missing
+        files for optional sources are still loaded with that source set to None.
+        Returns:
+            Set of directory names that are optional
+        """
+        return set()
+
     @abstractmethod
     def prepare_training_inputs(
         self,

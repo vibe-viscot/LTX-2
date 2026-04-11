@@ -135,6 +135,8 @@ class TrainingProgress:
         self._enabled = enabled
         self._total_steps = total_steps
         self._train_task: TaskID | None = None
+        self._last_grad_norm: float | None = None
+        self._last_grad_norm_clipped: bool = False
 
         if not enabled:
             self._progress = None
@@ -180,6 +182,7 @@ class TrainingProgress:
         lr: float,
         step_time: float,
         grad_norm: float | None = None,
+        grad_norm_clipped: bool = False,
         advance: bool = True,
     ) -> None:
         """Update the training progress display.
@@ -188,14 +191,19 @@ class TrainingProgress:
             lr: Current learning rate
             step_time: Time taken for this step in seconds
             grad_norm: Current gradient norm (before clipping)
+            grad_norm_clipped: Whether gradient clipping was applied this step
             advance: Whether to advance the progress by one step
         """
         if self._progress is None or self._train_task is None:
             return
 
-        info = f"Loss: {loss:.4f} | LR: {lr:.2e}"
         if grad_norm is not None:
-            info += f" | GradNorm: {grad_norm:.4f}"
+            self._last_grad_norm = grad_norm
+            self._last_grad_norm_clipped = grad_norm_clipped
+        info = f"Loss: {loss:.4f} | LR: {lr:.2e}"
+        if self._last_grad_norm is not None:
+            clip_tag = " (clipped)" if self._last_grad_norm_clipped else ""
+            info += f" | GradNorm: {self._last_grad_norm:.4f}{clip_tag}"
         info += f" | {step_time:.2f}s/step"
         self._progress.update(
             self._train_task,

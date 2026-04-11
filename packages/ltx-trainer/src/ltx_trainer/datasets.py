@@ -84,7 +84,12 @@ class DummyDataset(Dataset):
 
 
 class PrecomputedDataset(Dataset):
-    def __init__(self, data_root: str, data_sources: dict[str, str] | list[str] | None = None) -> None:
+    def __init__(
+        self,
+        data_root: str,
+        data_sources: dict[str, str] | list[str] | None = None,
+        optional_sources: set[str] | None = None,
+    ) -> None:
         """
         Generic dataset for loading precomputed data from multiple sources.
         Args:
@@ -93,6 +98,9 @@ class PrecomputedDataset(Dataset):
               - Dict mapping directory names to output keys
               - List of directory names (keys will equal values)
               - None (defaults to ["latents", "conditions"])
+            optional_sources: Set of directory names that are optional per sample.
+              Samples missing files for optional sources are still loaded;
+              the missing source will be None in the returned dict.
         Example:
             # Standard mode (list)
             dataset = PrecomputedDataset("data/", ["latents", "conditions"])
@@ -100,8 +108,9 @@ class PrecomputedDataset(Dataset):
             dataset = PrecomputedDataset("data/", {"latents": "latent_conditions", "conditions": "text_conditions"})
             # IC-LoRA mode
             dataset = PrecomputedDataset("data/", ["latents", "conditions", "reference_latents"])
-            # Keyframe mode
-            dataset = PrecomputedDataset("data/", ["latents", "conditions", "keyframes"])
+            # Keyframe mode (optional per sample)
+            dataset = PrecomputedDataset("data/", ["latents", "conditions", "keyframes"],
+                                         optional_sources={"keyframes"})
         Note:
             Latents are always returned in non-patchified format [C, F, H, W].
             Legacy patchified format [seq_len, C] is automatically converted.
@@ -111,6 +120,7 @@ class PrecomputedDataset(Dataset):
 
         self.data_root = self._setup_data_root(data_root)
         self.data_sources = self._normalize_data_sources(data_sources)
+        self.optional_sources = optional_sources or set()
         self.source_paths = self._setup_source_paths()
         self.sample_files = self._discover_samples()
         self._validate_setup()
@@ -151,13 +161,18 @@ class PrecomputedDataset(Dataset):
             source_path = self.data_root / dir_name
             source_paths[dir_name] = source_path
 
-            # Check that all sources exist.
-            if not source_path.exists():
-                raise FileNotFoundError(f"Required {dir_name} directory does not exist: {source_path}")
+            # Optional sources may not have a directory at all
+            if dir_name in self.optional_sources:
+                if not source_path.exists():
+                    logger.info(f"Optional source directory '{dir_name}' not found at {source_path}, "
+                                "samples without this source will have it set to None")
+            else:
+                if not source_path.exists():
+                    raise FileNotFoundError(f"Required {dir_name} directory does not exist: {source_path}")
 
         return source_paths
 
-    def _discover_samples(self) -> dict[str, list[Path]]:
+    def _discover_samples(self) -> dict[str, list[Path | None]]:
         """Discover all valid sample files across all data sources."""
         # Use first data source as the reference to discover samples
         data_key = "latents" if "latents" in self.data_sources else next(iter(self.data_sources.keys()))
@@ -174,15 +189,25 @@ class PrecomputedDataset(Dataset):
         for data_file in data_files:
             rel_path = data_file.relative_to(data_path)
 
-            # Check if corresponding files exist in ALL sources
-            if self._all_source_files_exist(data_file, rel_path):
+            # Check if corresponding files exist in all required sources
+            if self._all_required_source_files_exist(data_file, rel_path):
                 self._fill_sample_data_files(data_file, rel_path, sample_files)
+
+        # Log optional source statistics
+        for dir_name in self.optional_sources:
+            if dir_name in self.data_sources:
+                output_key = self.data_sources[dir_name]
+                total = len(sample_files[output_key])
+                present = sum(1 for p in sample_files[output_key] if p is not None)
+                logger.info(f"Optional source '{dir_name}': {present}/{total} samples have data")
 
         return sample_files
 
-    def _all_source_files_exist(self, data_file: Path, rel_path: Path) -> bool:
-        """Check if corresponding files exist in all data sources."""
+    def _all_required_source_files_exist(self, data_file: Path, rel_path: Path) -> bool:
+        """Check if corresponding files exist in all required (non-optional) data sources."""
         for dir_name in self.data_sources:
+            if dir_name in self.optional_sources:
+                continue
             expected_path = self._get_expected_file_path(dir_name, data_file, rel_path)
             if not expected_path.exists():
                 logger.warning(
@@ -202,18 +227,24 @@ class PrecomputedDataset(Dataset):
 
         return source_path / rel_path
 
-    def _fill_sample_data_files(self, data_file: Path, rel_path: Path, sample_files: dict[str, list[Path]]) -> None:
+    def _fill_sample_data_files(
+        self, data_file: Path, rel_path: Path, sample_files: dict[str, list[Path | None]]
+    ) -> None:
         """Add a valid sample to the sample_files tracking."""
         for dir_name, output_key in self.data_sources.items():
             expected_path = self._get_expected_file_path(dir_name, data_file, rel_path)
-            sample_files[output_key].append(expected_path.relative_to(self.source_paths[dir_name]))
+            if dir_name in self.optional_sources and not expected_path.exists():
+                sample_files[output_key].append(None)
+            else:
+                sample_files[output_key].append(expected_path.relative_to(self.source_paths[dir_name]))
 
     def _validate_setup(self) -> None:
         """Validate that the dataset setup is correct."""
         if not self.sample_files:
-            raise ValueError("No valid samples found - all data sources must have matching files")
+            raise ValueError("No valid samples found - all required data sources must have matching files")
 
-        # Verify all output keys have the same number of samples
+        # Verify all output keys have the same number of entries
+        # (optional sources use None for missing files, so counts should still match)
         sample_counts = {key: len(files) for key, files in self.sample_files.items()}
         if len(set(sample_counts.values())) > 1:
             raise ValueError(f"Mismatched sample counts across sources: {sample_counts}")
@@ -227,8 +258,14 @@ class PrecomputedDataset(Dataset):
         result = {}
 
         for dir_name, output_key in self.data_sources.items():
-            source_path = self.source_paths[dir_name]
             file_rel_path = self.sample_files[output_key][index]
+
+            # Optional source with no file for this sample
+            if file_rel_path is None:
+                result[output_key] = None
+                continue
+
+            source_path = self.source_paths[dir_name]
             file_path = source_path / file_rel_path
 
             try:
