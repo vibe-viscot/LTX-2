@@ -55,8 +55,8 @@ optimization:
   learning_rate: 1e-4
   steps: 3000
   batch_size: 1
-  gradient_accumulation_steps: 2
-  max_grad_norm: 0.3
+  gradient_accumulation_steps: 4
+  max_grad_norm: 0.25
   optimizer_type: "adamw"
   scheduler_type: "wsd"
   scheduler_params:
