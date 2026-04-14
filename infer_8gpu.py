@@ -28,12 +28,12 @@ def parse_args():
     parser.add_argument("--checkpoint-path", type=str,
                         default="/yke/models/LTX-2.3/ltx-2.3-22b-dev.safetensors")
     parser.add_argument("--distilled-lora", type=str,
-                        default="/yke/models/LTX-2.3/ltx-2.3-22b-distilled-lora-384.safetensors")
+                        default="/yke/models/LTX-2.3/ltx-2.3-22b-distilled-lora-384-1.1.safetensors")
     parser.add_argument("--distilled-lora-strength", type=float, default=0.8)
     parser.add_argument("--lora", type=str, default=None,
                         help="Optional LoRA path")
     parser.add_argument("--spatial-upsampler-path", type=str,
-                        default="/yke/models/LTX-2.3/ltx-2.3-spatial-upscaler-x2-1.0.safetensors")
+                        default="/yke/models/LTX-2.3/ltx-2.3-spatial-upscaler-x2-1.1.safetensors")
     parser.add_argument("--gemma-root", type=str,
                         default="/yke/models/gemma-3-12b-it-qat-q4_0-unquantized")
 
