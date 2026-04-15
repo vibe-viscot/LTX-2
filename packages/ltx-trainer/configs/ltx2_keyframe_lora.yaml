@@ -53,9 +53,9 @@ training_strategy:
 
 optimization:
   learning_rate: 1e-4
-  steps: 3000
+  steps: 1000
   batch_size: 1
-  gradient_accumulation_steps: 4
+  gradient_accumulation_steps: 2
   max_grad_norm: 0.25
   optimizer_type: "adamw"
   scheduler_type: "wsd"
@@ -70,7 +70,7 @@ acceleration:
   load_text_encoder_in_8bit: false
 
 data:
-  preprocessed_data_root: "/data/ckpt_zsqiao/codes/omni_ref_v0.1/preprocessed"
+  preprocessed_data_root: "/data/ckpt_zsqiao/codes/item_ref/preprocessed"
   num_dataloader_workers: 4
 
 validation:
@@ -92,7 +92,7 @@ validation:
   skip_initial_validation: true
 
 checkpoints:
-  interval: 1000
+  interval: 500
   keep_last_n: -1
   precision: "bfloat16"
 
@@ -112,4 +112,4 @@ wandb:
   log_validation_videos: true
 
 seed: 42
-output_dir: "/data/ckpt_zsqiao/sft_lora_ltx2.3_keyframe"
+output_dir: "/data/ckpt_zsqiao/sft_lora_ltx2.3_keyframe_0415"

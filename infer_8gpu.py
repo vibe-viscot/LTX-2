@@ -23,10 +23,16 @@ def parse_args():
     parser.add_argument("--csv", type=str, required=True, help="Path to CSV file with tasks")
     parser.add_argument("--num-gpus", type=int, default=8, help="Number of GPUs to use")
     parser.add_argument("--output-dir", type=str, default="./outputs", help="Output directory")
+    parser.add_argument("--mode", type=str, default="two_stages",
+                        choices=["two_stages", "distilled"],
+                        help="Pipeline: two_stages (ti2vid_two_stages) or distilled (step-distillation)")
 
     # Fixed model paths
     parser.add_argument("--checkpoint-path", type=str,
                         default="/yke/models/LTX-2.3/ltx-2.3-22b-dev.safetensors")
+    parser.add_argument("--distilled-checkpoint-path", type=str,
+                        default="/yke/models/LTX-2.3/ltx-2.3-22b-distilled.safetensors",
+                        help="Used only in --mode distilled")
     parser.add_argument("--distilled-lora", type=str,
                         default="/yke/models/LTX-2.3/ltx-2.3-22b-distilled-lora-384-1.1.safetensors")
     parser.add_argument("--distilled-lora-strength", type=float, default=0.8)
@@ -38,7 +44,8 @@ def parse_args():
                         default="/yke/models/gemma-3-12b-it-qat-q4_0-unquantized")
 
     # Generation params
-    parser.add_argument("--num-inference-steps", type=int, default=50)
+    parser.add_argument("--num-inference-steps", type=int, default=None,
+                        help="If unset, the pipeline's default is used (distilled mode usually omits this)")
     parser.add_argument("--height", type=int, default=1536)
     parser.add_argument("--width", type=int, default=1024)
     parser.add_argument("--frame-rate", type=int, default=24)
@@ -83,24 +90,34 @@ def build_command(task: dict, args: argparse.Namespace) -> list[str]:
     """Build the inference command for a single task."""
     output_path = os.path.join(args.output_dir, f"{task['idx']:06d}.mp4")
 
-    cmd = [
-        sys.executable, "-m", "ltx_pipelines.ti2vid_two_stages",
-        "--checkpoint-path", args.checkpoint_path,
-        "--distilled-lora", args.distilled_lora, str(args.distilled_lora_strength),
+    if args.mode == "two_stages":
+        cmd = [
+            sys.executable, "-m", "ltx_pipelines.ti2vid_two_stages",
+            "--checkpoint-path", args.checkpoint_path,
+            "--distilled-lora", args.distilled_lora, str(args.distilled_lora_strength),
+        ]
+        if args.lora:
+            cmd.extend(["--lora", args.lora])
+    else:  # distilled
+        cmd = [
+            sys.executable, "-m", "ltx_pipelines.distilled",
+            "--distilled-checkpoint-path", args.distilled_checkpoint_path,
+        ]
+
+    cmd.extend([
         "--spatial-upsampler-path", args.spatial_upsampler_path,
         "--gemma-root", args.gemma_root,
         "--prompt", task["caption"],
         "--output-path", output_path,
-        "--num-inference-steps", str(args.num_inference_steps),
         "--height", str(args.height),
         "--width", str(args.width),
         "--frame-rate", str(args.frame_rate),
         "--num-frames", str(args.num_frames),
         "--seed", str(args.seed),
-    ]
+    ])
 
-    if args.lora:
-        cmd.extend(["--lora", args.lora])
+    if args.num_inference_steps is not None:
+        cmd.extend(["--num-inference-steps", str(args.num_inference_steps)])
 
     # Add first frame if specified
     if args.first_frame:
