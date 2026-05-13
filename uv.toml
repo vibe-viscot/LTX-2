@@ -1,4 +1,12 @@
 [[index]]
 name = "tsinghua"
-url = "https://mirrors.aliyun.com/pypi/simple/"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
 default = true
+
+[[index]]
+name = "aliyun"
+url = "https://mirrors.aliyun.com/pypi/simple/"
+
+[[index]]
+name = "pypi"
+url = "https://pypi.org/simple/"
