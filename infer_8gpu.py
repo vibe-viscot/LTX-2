@@ -24,8 +24,8 @@ def parse_args():
     parser.add_argument("--num-gpus", type=int, default=8, help="Number of GPUs to use")
     parser.add_argument("--output-dir", type=str, default="./outputs", help="Output directory")
     parser.add_argument("--mode", type=str, default="two_stages",
-                        choices=["two_stages", "distilled"],
-                        help="Pipeline: two_stages (ti2vid_two_stages) or distilled (step-distillation)")
+                        choices=["single", "two_stages", "distilled"],
+                        help="Pipeline: single (ti2vid_one_stage), two_stages (ti2vid_two_stages) or distilled (step-distillation)")
 
     # Fixed model paths
     parser.add_argument("--checkpoint-path", type=str,
@@ -90,7 +90,14 @@ def build_command(task: dict, args: argparse.Namespace) -> list[str]:
     """Build the inference command for a single task."""
     output_path = os.path.join(args.output_dir, f"{task['idx']:06d}.mp4")
 
-    if args.mode == "two_stages":
+    if args.mode == "single":
+        cmd = [
+            sys.executable, "-m", "ltx_pipelines.ti2vid_one_stage",
+            "--checkpoint-path", args.checkpoint_path,
+        ]
+        if args.lora:
+            cmd.extend(["--lora", args.lora])
+    elif args.mode == "two_stages":
         cmd = [
             sys.executable, "-m", "ltx_pipelines.ti2vid_two_stages",
             "--checkpoint-path", args.checkpoint_path,
@@ -104,8 +111,10 @@ def build_command(task: dict, args: argparse.Namespace) -> list[str]:
             "--distilled-checkpoint-path", args.distilled_checkpoint_path,
         ]
 
+    if args.mode != "single":
+        cmd.extend(["--spatial-upsampler-path", args.spatial_upsampler_path])
+
     cmd.extend([
-        "--spatial-upsampler-path", args.spatial_upsampler_path,
         "--gemma-root", args.gemma_root,
         "--prompt", task["caption"],
         "--output-path", output_path,
